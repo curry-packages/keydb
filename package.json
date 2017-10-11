@@ -2,7 +2,7 @@
     "name": "keydb",
     "version": "1.0.0",
     "author": "Michael Hanus <mh@informatik.uni-kiel.de>",
-    "synopsis": "Libraries for accesses databases via database keys",
+    "synopsis": "Libraries for accessing databases via database keys",
     "category": [ "Database" ],
     "dependencies": { },
     "exportedModules": [ "Database.KeyDatabaseSQLite" ],
@@ -17,7 +17,7 @@
     "license": "BSD-3-Clause",
     "licenseFile": "LICENSE",
     "source": {
-        "git": "https://git.ps.informatik.uni-kiel.de/curry-packages/html.git",
+        "git": "https://git.ps.informatik.uni-kiel.de/curry-packages/keydb.git",
         "tag": "$version"
     }
 }
