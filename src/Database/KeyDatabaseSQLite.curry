@@ -40,14 +40,13 @@ module Database.KeyDatabaseSQLite (
 
   ) where
 
-import Global       ( Global, GlobalSpec(..), global, readGlobal, writeGlobal )
-import IO           ( Handle, hPutStrLn, hGetLine, hFlush, hClose, stderr )
-import IOExts       ( connectToCommand )
-import List         ( intersperse, insertBy )
-import Maybe        ( mapMMaybe )
-import ReadNumeric  ( readInt )
-import ReadShowTerm ( readQTerm, showQTerm, readsQTerm )
-import System       ( system )
+import Data.Global    ( Global, GlobalSpec(..), global, readGlobal, writeGlobal )
+import Data.List      ( intersperse, insertBy )
+import System.Process ( system )
+import System.IO      ( Handle, hPutStrLn, hGetLine, hFlush, hClose, stderr )
+import IOExts         ( connectToCommand )
+import Numeric        ( readInt )
+import ReadShowTerm   ( readQTerm, showQTerm, readsQTerm )
 
 infixl 1 |>>, |>>=
 
@@ -94,7 +93,7 @@ unTrans (Trans action) = action
 --- locking order by sorting databases by their name and locking them
 --- in order immediately when a transaction begins.
 ---
---- More information on 
+--- More information on
 --- <a href="http://sqlite.org/lang_transaction.html">transactions</a>
 --- in SQLite is available online.
 ---
@@ -354,7 +353,7 @@ getDBInfos keyPred keys = Query $
  where
   sortByIndexInGivenList rows =
     do keyInfos <- mapIO readKeyInfo rows
-       return $ mapMMaybe (\key -> lookup key keyInfos) keys
+       return $ mapM (\key -> lookup key keyInfos) keys
 
 commaSep :: [String] -> String
 commaSep = concat . intersperse ", "
@@ -464,10 +463,11 @@ selectInt keyPred aggr cond =
 
 -- yields 1 for "1a" and exits for ""
 readIntOrExit :: String -> IO Int
-readIntOrExit s = maybe err (return . fst) $ readInt s
- where
-  err = dbError ExecutionError $
-    "readIntOrExit: cannot parse integer from string '" ++ show s ++ "'"
+readIntOrExit s = case readInt s of
+  [(v,_)] -> return v
+  _       -> dbError ExecutionError $
+             "readIntOrExit: cannot parse integer from string '"
+             ++ show s ++ "'"
 
 -- When selecting an unknown number of rows it is necessary to know
 -- when to stop. One way to be able to stop is to select 'count(*)'
@@ -524,7 +524,7 @@ lastQueryError :: Global (Maybe TError)
 lastQueryError = global Nothing Temporary
 
 getDBHandle :: KeyPred _ -> IO Handle
-getDBHandle keyPred = 
+getDBHandle keyPred =
   do ensureDBFor keyPred
      readDBHandle $ dbFile keyPred
 
@@ -706,4 +706,3 @@ instance Monad Transaction where
   a1 >>= a2 = a1 |>>= a2
   a1 >>  a2 = a1 |>>  a2
   return x = returnT x
-

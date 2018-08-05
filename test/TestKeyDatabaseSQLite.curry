@@ -5,9 +5,9 @@
 --- @version December 2011
 ------------------------------------------------------------------------------
 
-import IO
-import List ( sortBy )
-import System
+import System.IO
+import Data.List ( sortBy )
+import System.Process
 import Test.EasyCheck
 
 import Database.KeyDatabaseSQLite
@@ -142,4 +142,3 @@ runTWithError trans =
 
 sameBag :: Ord a => [a] -> [a] -> Bool
 sameBag xs ys = sort xs == sort ys
-
