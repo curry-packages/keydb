@@ -8,7 +8,7 @@
 import IO
 import List ( sortBy )
 import System
-import Test.EasyCheck
+import Test.Prop
 
 import Database.KeyDatabaseSQLite
 
