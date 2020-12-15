@@ -1,15 +1,17 @@
 {
     "name": "keydb",
-    "version": "2.0.0",
+    "version": "3.0.0",
     "author": "Michael Hanus <mh@informatik.uni-kiel.de>",
     "synopsis": "Libraries for accessing databases via database keys",
     "category": [ "Database" ],
-    "dependencies": { },
-    "exportedModules": [ "Database.KeyDatabaseSQLite" ],
-    "compilerCompatibility": {
-        "pakcs": ">= 2.0.0, < 3.0.0",
-        "kics2": ">= 2.0.0, < 3.0.0"
+    "dependencies": {
+        "base"        : ">= 3.0.0, < 4.0.0",
+        "global"      : ">= 3.0.0, < 4.0.0",
+        "io-extra"    : ">= 3.0.0, < 4.0.0",
+        "process"     : ">= 3.0.0, < 4.0.0",
+        "read-legacy" : ">= 3.0.0, < 4.0.0"
     },
+    "exportedModules": [ "Database.KeyDatabaseSQLite" ],
     "testsuite": {
         "src-dir": "test",
         "modules": [ "TestKeyDatabaseSQLite" ]

@@ -11,8 +11,7 @@
 --- constant `path'to'sqlite3`.
 ---
 --- @author Sebastian Fischer with changes by Michael Hanus
---- @version August 2011
---- @category database
+--- @version December 2020
 ------------------------------------------------------------------------------
 
 module Database.KeyDatabaseSQLite (
@@ -40,14 +39,17 @@ module Database.KeyDatabaseSQLite (
 
   ) where
 
-import Global       ( Global, GlobalSpec(..), global, readGlobal, writeGlobal )
-import IO           ( Handle, hPutStrLn, hGetLine, hFlush, hClose, stderr )
-import IOExts       ( connectToCommand )
-import List         ( intersperse, insertBy )
-import Maybe        ( mapMMaybe )
-import ReadNumeric  ( readInt )
-import ReadShowTerm ( readQTerm, showQTerm, readsQTerm )
-import System       ( system )
+import Control.Monad  ( when )
+import Data.List      ( intersperse, insertBy )
+import Data.Maybe
+import Numeric        ( readInt )
+import System.IO      ( Handle, hPutStrLn, hGetLine, hFlush, hClose, stderr )
+
+import Global         ( Global, GlobalSpec(..), global
+                      , readGlobal, writeGlobal )
+import System.IOExts  ( connectToCommand )
+import ReadShowTerm   ( readQTerm, showQTerm, readsQTerm )
+import System.Process ( system )
 
 infixl 1 |>>, |>>=
 
@@ -115,7 +117,7 @@ catchTrans action =
   action `catch` \terr ->
     do err <- readGlobal lastQueryError
        writeGlobal lastQueryError Nothing
-       return . Error $ maybe (TError ExecutionError (showError terr)) id err
+       return . Error $ maybe (TError ExecutionError (show terr)) id err
 
 --- Executes a possibly composed transaction on the current state
 --- of dynamic predicates as a single transaction.
@@ -146,7 +148,7 @@ returnT = transIO . return
 --- Returns the unit value in a transaction that does not access the
 --- database. Useful to ignore results when composing transactions.
 doneT :: Transaction ()
-doneT = transIO done
+doneT = transIO (return ())
 
 --- Aborts a transaction with an error.
 errorT :: TError -> Transaction a
@@ -180,7 +182,7 @@ t1 |>> t2 = t1 |>>= const t2
 sequenceT :: [Transaction a] -> Transaction [a]
 sequenceT = foldr seqT (returnT [])
  where
-  -- seqT t ts = t |>>= \x -> ts |>>= \xs -> returnT (x:xs)
+  --seqT t ts = t |>>= \x -> ts |>>= \xs -> returnT (x:xs)
   seqT t ts = do x  <- t
                  xs <- ts
                  return (x:xs)
@@ -267,7 +269,7 @@ existsDBKey keyPred key = Query $
 allDBKeys :: KeyPred _ -> Query [Key]
 allDBKeys keyPred = Query $
   do rows <- selectRows keyPred "_rowid_" ""
-     mapIO readIntOrExit rows
+     mapM readIntOrExit rows
 
 --- Returns a list of all info parts of stored entries. Do not use this
 --- function unless the database is small.
@@ -284,7 +286,7 @@ readInfo str = readQTerm $ "(" ++ str ++ ")"
 allDBKeyInfos :: KeyPred a -> Query [(Key,a)]
 allDBKeyInfos keyPred = Query $
   do rows <- selectRows keyPred "_rowid_,*" ""
-     mapIO readKeyInfo rows
+     mapM readKeyInfo rows
 
 readKeyInfo :: String -> IO (Key,a)
 readKeyInfo row =
@@ -306,7 +308,7 @@ n @= x = ColVal n . quote $ showQTerm x
 someDBKeys :: KeyPred _ -> [ColVal] -> Query [Key]
 someDBKeys keyPred cvs = Query $
   do rows <- selectSomeRows keyPred cvs "_rowid_"
-     mapIO readIntOrExit rows
+     mapM readIntOrExit rows
 
 --- Returns a list of those info parts of stored entries that match
 --- the given value restrictions for columns. Safe to use even on
@@ -322,7 +324,7 @@ someDBInfos keyPred cvs = Query $
 someDBKeyInfos :: KeyPred a -> [ColVal] -> Query [(Key,a)]
 someDBKeyInfos keyPred cvs = Query $
   do rows <- selectSomeRows keyPred cvs "_rowid_,*"
-     mapIO readKeyInfo rows
+     mapM readKeyInfo rows
 
 --- Returns a list of column projections on
 --- those entries that match the given value
@@ -332,7 +334,7 @@ someDBKeyProjections :: KeyPred a -> [Int] -> [ColVal] -> Query [(Key,b)]
 someDBKeyProjections keyPred cols cvs = Query $
   do let colnames = commaSep (map ((colNames keyPred) !!) cols)
      rows <- selectSomeRows keyPred cvs ("_rowid_,"++colnames)
-     mapIO readKeyInfo rows
+     mapM readKeyInfo rows
 
 --- Queries the information stored under the given key. Yields
 --- <code>Nothing</code> if the given key is not present.
@@ -353,8 +355,8 @@ getDBInfos keyPred keys = Query $
      sortByIndexInGivenList rows
  where
   sortByIndexInGivenList rows =
-    do keyInfos <- mapIO readKeyInfo rows
-       return $ mapMMaybe (\key -> lookup key keyInfos) keys
+    do keyInfos <- mapM readKeyInfo rows
+       return $ mapM (\key -> lookup key keyInfos) keys
 
 commaSep :: [String] -> String
 commaSep = concat . intersperse ", "
@@ -450,10 +452,10 @@ hPutAndFlush :: Handle -> String -> IO ()
 hPutAndFlush h s = hPutStrLn h s >> hFlush h
 
 modify :: KeyPred _ -> String -> String -> Transaction ()
-modify keyPred before after = transIO $
-  do sqlite3 keyPred $
-       before ++ " " ++ tableName keyPred ++ " " ++ after
-     done
+modify keyPred before after = transIO $ do
+  sqlite3 keyPred $
+    before ++ " " ++ tableName keyPred ++ " " ++ after
+  return ()
 
 selectInt :: KeyPred _ -> String -> String -> IO Int
 selectInt keyPred aggr cond =
@@ -464,10 +466,11 @@ selectInt keyPred aggr cond =
 
 -- yields 1 for "1a" and exits for ""
 readIntOrExit :: String -> IO Int
-readIntOrExit s = maybe err (return . fst) $ readInt s
- where
-  err = dbError ExecutionError $
-    "readIntOrExit: cannot parse integer from string '" ++ show s ++ "'"
+readIntOrExit s = case readInt s of
+  [(n,_)] -> return n
+  _       -> dbError ExecutionError $
+               "readIntOrExit: cannot parse integer from string '" ++
+               show s ++ "'"
 
 -- When selecting an unknown number of rows it is necessary to know
 -- when to stop. One way to be able to stop is to select 'count(*)'
@@ -550,7 +553,7 @@ openDBHandles = global [] Temporary
 withAllDBHandles :: (Handle -> IO _) -> IO ()
 withAllDBHandles f =
   do dbHandles <- readGlobal openDBHandles
-     mapIO_ (f . snd) dbHandles
+     mapM_ (f . snd) dbHandles
 
 ensureDBHandle :: DBFile -> IO ()
 ensureDBHandle db =
@@ -570,7 +573,7 @@ ensureDBHandle db =
 
 unless :: Bool -> IO () -> IO ()
 unless False action = action
-unless True  _      = done
+unless True  _      = return ()
 
 on :: (b -> b -> c) -> (a -> b) -> a -> a -> c
 on f g x y = f (g x) (g y)
@@ -702,8 +705,24 @@ showTError :: TError -> String
 showTError (TError k s) = "Transaction error " ++ show k ++ ": " ++ s
 
 ------------------------------------------------------------------------------
+-- Define Monad instance for `Transaction`.
+
+mapTransResult :: (a -> b) -> TransResult a -> TransResult b
+mapTransResult f (OK a)     = OK (f a)
+mapTransResult _ (Error te) = Error te
+
+mapTrans :: (a -> b) -> Transaction a -> Transaction b
+mapTrans f (Trans act) = Trans (fmap (mapTransResult f) act)
+
+instance Functor Transaction where
+  fmap = mapTrans
+
+instance Applicative Transaction where
+  pure x = returnT x
+  tf <*> x = tf |>>= \f -> fmap f x
+
 instance Monad Transaction where
   a1 >>= a2 = a1 |>>= a2
   a1 >>  a2 = a1 |>>  a2
-  return x = returnT x
 
+------------------------------------------------------------------------------

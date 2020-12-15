@@ -5,10 +5,10 @@
 --- @version December 2011
 ------------------------------------------------------------------------------
 
-import IO
-import List ( sortBy )
-import System
+import Data.List ( sortBy )
 import Test.Prop
+
+import System.Process ( system )
 
 import Database.KeyDatabaseSQLite
 
