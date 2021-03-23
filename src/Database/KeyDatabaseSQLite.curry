@@ -11,7 +11,7 @@
 --- constant `path'to'sqlite3`.
 ---
 --- @author Sebastian Fischer with changes by Michael Hanus
---- @version December 2020
+--- @version March 2021
 ------------------------------------------------------------------------------
 
 module Database.KeyDatabaseSQLite (
@@ -42,13 +42,11 @@ module Database.KeyDatabaseSQLite (
 import Control.Monad  ( when )
 import Data.List      ( intersperse, insertBy )
 import Data.Maybe
-import Numeric        ( readInt )
 import System.IO      ( Handle, hPutStrLn, hGetLine, hFlush, hClose, stderr )
 
 import Global         ( Global, GlobalSpec(..), global
                       , readGlobal, writeGlobal )
 import System.IOExts  ( connectToCommand )
-import ReadShowTerm   ( readQTerm, showQTerm, readsQTerm )
 import System.Process ( system )
 
 infixl 1 |>>, |>>=
@@ -273,22 +271,22 @@ allDBKeys keyPred = Query $
 
 --- Returns a list of all info parts of stored entries. Do not use this
 --- function unless the database is small.
-allDBInfos :: KeyPred a -> Query [a]
+allDBInfos :: (Read a, Show a) => KeyPred a -> Query [a]
 allDBInfos keyPred = Query $
   do rows <- selectRows keyPred "*" ""
      return $!! map readInfo rows
 
-readInfo :: String -> a
-readInfo str = readQTerm $ "(" ++ str ++ ")"
+readInfo :: Read a => String -> a
+readInfo str = read $ "(" ++ str ++ ")"
 
 --- Returns a list of all stored entries. Do not use this function
 --- unless the database is small.
-allDBKeyInfos :: KeyPred a -> Query [(Key,a)]
+allDBKeyInfos :: (Read a, Show a) => KeyPred a -> Query [(Key,a)]
 allDBKeyInfos keyPred = Query $
   do rows <- selectRows keyPred "_rowid_,*" ""
      mapM readKeyInfo rows
 
-readKeyInfo :: String -> IO (Key,a)
+readKeyInfo :: (Read a, Show a) => String -> IO (Key,a)
 readKeyInfo row =
   do key <- readIntOrExit keyStr
      return $!! (key, readInfo infoStr)
@@ -299,8 +297,8 @@ readKeyInfo row =
 data ColVal = ColVal Int String
 
 --- Constructs a value restriction for the column given as first argument
-(@=) :: Int -> a -> ColVal
-n @= x = ColVal n . quote $ showQTerm x
+(@=) :: Show a => Int -> a -> ColVal
+n @= x = ColVal n . quote $ show x
 
 --- Returns a list of those stored keys where the corresponding info
 --- part matches the gioven value restriction. Safe to use even on
@@ -313,7 +311,7 @@ someDBKeys keyPred cvs = Query $
 --- Returns a list of those info parts of stored entries that match
 --- the given value restrictions for columns. Safe to use even on
 --- large databases if the number of results is small.
-someDBInfos :: KeyPred a -> [ColVal] -> Query [a]
+someDBInfos :: (Read a, Show a) => KeyPred a -> [ColVal] -> Query [a]
 someDBInfos keyPred cvs = Query $
   do rows <- selectSomeRows keyPred cvs "*"
      return $!! map readInfo rows
@@ -321,7 +319,7 @@ someDBInfos keyPred cvs = Query $
 --- Returns a list of those entries that match the given value
 --- restrictions for columns. Safe to use even on large databases if
 --- the number of results is small.
-someDBKeyInfos :: KeyPred a -> [ColVal] -> Query [(Key,a)]
+someDBKeyInfos :: (Read a, Show a) => KeyPred a -> [ColVal] -> Query [(Key,a)]
 someDBKeyInfos keyPred cvs = Query $
   do rows <- selectSomeRows keyPred cvs "_rowid_,*"
      mapM readKeyInfo rows
@@ -330,7 +328,8 @@ someDBKeyInfos keyPred cvs = Query $
 --- those entries that match the given value
 --- restrictions for columns. Safe to use even on large databases if
 --- the number of results is small.
-someDBKeyProjections :: KeyPred a -> [Int] -> [ColVal] -> Query [(Key,b)]
+someDBKeyProjections :: (Read b, Show b) => KeyPred a -> [Int] -> [ColVal]
+                     -> Query [(Key,b)]
 someDBKeyProjections keyPred cols cvs = Query $
   do let colnames = commaSep (map ((colNames keyPred) !!) cols)
      rows <- selectSomeRows keyPred cvs ("_rowid_,"++colnames)
@@ -338,7 +337,7 @@ someDBKeyProjections keyPred cols cvs = Query $
 
 --- Queries the information stored under the given key. Yields
 --- <code>Nothing</code> if the given key is not present.
-getDBInfo :: KeyPred a -> Key -> Query (Maybe a)
+getDBInfo :: (Read a, Show a) => KeyPred a -> Key -> Query (Maybe a)
 getDBInfo keyPred key = Query $
   do rows <- selectRows keyPred "*" $ "where _rowid_ = " ++ show key
      readHeadIfExists rows
@@ -348,7 +347,7 @@ getDBInfo keyPred key = Query $
 
 --- Queries the information stored under the given keys. Yields
 --- <code>Nothing</code> if a given key is not present.
-getDBInfos :: KeyPred a -> [Key] -> Query (Maybe [a])
+getDBInfos :: (Read a, Show a) => KeyPred a -> [Key] -> Query (Maybe [a])
 getDBInfos keyPred keys = Query $
   do rows <- selectRows keyPred "_rowid_,*" $
                "where _rowid_ in (" ++ commaSep (map show keys) ++ ")"
@@ -378,7 +377,7 @@ deleteDBEntries keyPred keys =
 --- Updates the information stored under the given key. The
 --- transaction is aborted with a <code>KeyNotExistsError</code> if
 --- the given key is not present in the database.
-updateDBEntry :: KeyPred a -> Key -> a -> Transaction ()
+updateDBEntry :: Show a => KeyPred a -> Key -> a -> Transaction ()
 updateDBEntry keyPred key info =
   errorUnlessKeyExists keyPred key ("updateDBEntry, " ++ show key) |>>
   modify keyPred "update"
@@ -392,13 +391,13 @@ errorUnlessKeyExists keyPred key msg =
     then errorT $ TError KeyNotExistsError msg
     else doneT
 
-colVals :: KeyPred a -> a -> [String]
+colVals :: Show a => KeyPred a -> a -> [String]
 colVals keyPred info =
   zipWith (\c v -> c ++ " = " ++ v) (colNames keyPred) (infoVals keyPred info)
 
-infoVals :: KeyPred a -> a -> [String]
+infoVals :: Show a => KeyPred a -> a -> [String]
 infoVals keyPred info
-  | null . tail $ colNames keyPred = [quote $ showQTerm info]
+  | null . tail $ colNames keyPred = [quote $ show info]
   | otherwise                      = map quote $ showTupleArgs info
 
 quote :: String -> String
@@ -408,7 +407,7 @@ quote s = "'" ++ concatMap quoteChar s ++ "'"
 
 --- Stores new information in the database and yields the newly
 --- generated key.
-newDBEntry :: KeyPred a -> a -> Transaction Key
+newDBEntry :: Show a => KeyPred a -> a -> Transaction Key
 newDBEntry keyPred info =
   modify keyPred "insert into"
     ("values (" ++ commaSep (infoVals keyPred info) ++ ")") |>>
@@ -419,7 +418,7 @@ newDBEntry keyPred info =
 --- @param db - the database (a dynamic predicate)
 --- @param key - the key of the new entry (an integer)
 --- @param info - the information to be stored in the new entry
-newDBKeyEntry :: KeyPred a -> Key -> a -> Transaction ()
+newDBKeyEntry :: Show a => KeyPred a -> Key -> a -> Transaction ()
 newDBKeyEntry keyPred key info =
   getDB (existsDBKey keyPred key) |>>= \b ->
   if b
@@ -466,7 +465,7 @@ selectInt keyPred aggr cond =
 
 -- yields 1 for "1a" and exits for ""
 readIntOrExit :: String -> IO Int
-readIntOrExit s = case readInt s of
+readIntOrExit s = case reads s of
   [(n,_)] -> return n
   _       -> dbError ExecutionError $
                "readIntOrExit: cannot parse integer from string '" ++
@@ -611,8 +610,8 @@ currentlyInTransaction = global False Temporary
 
 -- converting arguments of a tuple to strings
 
-showTupleArgs :: a -> [String]
-showTupleArgs = splitTLC . removeOuterParens . showQTerm
+showTupleArgs :: Show a => a -> [String]
+showTupleArgs = splitTLC . removeOuterParens . show
 
 removeOuterParens :: String -> String
 removeOuterParens ('(':cs) = init cs
