@@ -11,7 +11,7 @@
 --- constant `path'to'sqlite3`.
 ---
 --- @author Sebastian Fischer with changes by Michael Hanus
---- @version March 2021
+--- @version May 2021
 ------------------------------------------------------------------------------
 
 module Database.KeyDatabaseSQLite (
@@ -44,8 +44,7 @@ import Data.List      ( intersperse, insertBy )
 import Data.Maybe
 import System.IO      ( Handle, hPutStrLn, hGetLine, hFlush, hClose, stderr )
 
-import Global         ( Global, GlobalSpec(..), global
-                      , readGlobal, writeGlobal )
+import Data.Global    ( GlobalT, globalTemporary, readGlobalT, writeGlobalT )
 import System.IOExts  ( connectToCommand )
 import System.Process ( system )
 
@@ -113,8 +112,8 @@ runT trans =
 catchTrans :: IO (TransResult a) -> IO (TransResult a)
 catchTrans action =
   action `catch` \terr ->
-    do err <- readGlobal lastQueryError
-       writeGlobal lastQueryError Nothing
+    do err <- readGlobalT lastQueryError
+       writeGlobalT lastQueryError Nothing
        return . Error $ maybe (TError ExecutionError (show terr)) id err
 
 --- Executes a possibly composed transaction on the current state
@@ -513,17 +512,17 @@ showColVals keyPred (c:vs) = concat . intersperse " AND " $ map showCV (c:vs)
 closeDBHandles :: IO ()
 closeDBHandles =
   do withAllDBHandles hClose
-     writeGlobal openDBHandles []
+     writeGlobalT openDBHandles []
 
 -- helper functions and globaly stored information
 
 dbError :: TErrorKind -> String -> IO a
 dbError kind msg =
-  do writeGlobal lastQueryError . Just $ TError kind msg
+  do writeGlobalT lastQueryError . Just $ TError kind msg
      error msg
 
-lastQueryError :: Global (Maybe TError)
-lastQueryError = global Nothing Temporary
+lastQueryError :: GlobalT (Maybe TError)
+lastQueryError = globalTemporary Nothing
 
 getDBHandle :: KeyPred _ -> IO Handle
 getDBHandle keyPred = 
@@ -542,21 +541,21 @@ ensureDBFor keyPred =
   (db,(table,cols)) = dbInfo keyPred
 
 readDBHandle :: DBFile -> IO Handle
-readDBHandle db = readGlobal openDBHandles >>= maybe err return . lookup db
+readDBHandle db = readGlobalT openDBHandles >>= maybe err return . lookup db
  where
   err = dbError ExecutionError $ "readDBHandle: no handle for '" ++ db ++ "'"
 
-openDBHandles :: Global [(DBFile,Handle)]
-openDBHandles = global [] Temporary
+openDBHandles :: GlobalT [(DBFile,Handle)]
+openDBHandles = globalTemporary []
 
 withAllDBHandles :: (Handle -> IO _) -> IO ()
 withAllDBHandles f =
-  do dbHandles <- readGlobal openDBHandles
+  do dbHandles <- readGlobalT openDBHandles
      mapM_ (f . snd) dbHandles
 
 ensureDBHandle :: DBFile -> IO ()
 ensureDBHandle db =
-  do dbHandles <- readGlobal openDBHandles
+  do dbHandles <- readGlobalT openDBHandles
      unless (db `elem` map fst dbHandles) $ addNewDBHandle dbHandles
  where
   addNewDBHandle dbHandles = do
@@ -565,9 +564,9 @@ ensureDBHandle db =
       error "Database interface `sqlite3' not found. Please install package `sqlite3'!"
     h <- connectToCommand $ path'to'sqlite3 ++ " " ++ db
     hPutAndFlush h ".separator ','"
-    writeGlobal openDBHandles $ -- sort against deadlock
+    writeGlobalT openDBHandles $ -- sort against deadlock
       insertBy ((<=) `on` fst) (db,h) dbHandles
-    isTrans <- readGlobal currentlyInTransaction
+    isTrans <- readGlobalT currentlyInTransaction
     unless (not isTrans) $ hPutStrLn h "begin immediate;"
 
 unless :: Bool -> IO () -> IO ()
@@ -579,34 +578,34 @@ on f g x y = f (g x) (g y)
 
 ensureDBTable :: DBFile -> TableName -> [ColName] -> IO ()
 ensureDBTable db table cols =
-  do dbTables <- readGlobal knownDBTables
+  do dbTables <- readGlobalT knownDBTables
      unless ((db,table) `elem` dbTables) $
        do h <- readDBHandle db
           hPutAndFlush h $
             "create table if not exists " ++ table ++
             " (" ++ commaSep cols ++ ");"
-          writeGlobal knownDBTables $ (db,table) : dbTables
+          writeGlobalT knownDBTables $ (db,table) : dbTables
 
-knownDBTables :: Global [(DBFile,TableName)]
-knownDBTables = global [] Temporary
+knownDBTables :: GlobalT [(DBFile,TableName)]
+knownDBTables = globalTemporary []
 
 beginTransaction :: IO ()
 beginTransaction =
-  do writeGlobal currentlyInTransaction True
+  do writeGlobalT currentlyInTransaction True
      withAllDBHandles (`hPutAndFlush` "begin immediate;")
 
 commitTransaction :: IO ()
 commitTransaction =
   do withAllDBHandles (`hPutAndFlush` "commit;")
-     writeGlobal currentlyInTransaction False
+     writeGlobalT currentlyInTransaction False
 
 rollbackTransaction :: IO ()
 rollbackTransaction =
   do withAllDBHandles (`hPutAndFlush` "rollback;")
-     writeGlobal currentlyInTransaction False
+     writeGlobalT currentlyInTransaction False
 
-currentlyInTransaction :: Global Bool
-currentlyInTransaction = global False Temporary
+currentlyInTransaction :: GlobalT Bool
+currentlyInTransaction = globalTemporary False
 
 -- converting arguments of a tuple to strings
 

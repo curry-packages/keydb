@@ -1,12 +1,12 @@
 {
     "name": "keydb",
-    "version": "3.0.0",
+    "version": "3.1.0",
     "author": "Michael Hanus <mh@informatik.uni-kiel.de>",
     "synopsis": "Libraries for accessing databases via database keys",
     "category": [ "Database" ],
     "dependencies": {
         "base"        : ">= 3.0.0, < 4.0.0",
-        "global"      : "= 3.0.0",
+        "global"      : ">= 3.1.0, < 4.0.0",
         "io-extra"    : ">= 3.0.0, < 4.0.0",
         "process"     : ">= 3.0.0, < 4.0.0"
     },
