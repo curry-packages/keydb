@@ -11,7 +11,7 @@
 --- constant `path'to'sqlite3`.
 ---
 --- @author Sebastian Fischer with changes by Michael Hanus
---- @version May 2021
+--- @version June 2021
 ------------------------------------------------------------------------------
 
 module Database.KeyDatabaseSQLite (
@@ -44,7 +44,7 @@ import Data.List      ( intersperse, insertBy )
 import Data.Maybe
 import System.IO      ( Handle, hPutStrLn, hGetLine, hFlush, hClose, stderr )
 
-import Data.Global    ( GlobalT, globalTemporary, readGlobalT, writeGlobalT )
+import Data.Global    ( GlobalT, globalT, readGlobalT, writeGlobalT )
 import System.IOExts  ( connectToCommand )
 import System.Process ( system )
 
@@ -522,7 +522,7 @@ dbError kind msg =
      error msg
 
 lastQueryError :: GlobalT (Maybe TError)
-lastQueryError = globalTemporary Nothing
+lastQueryError = globalT "Database.KeyDatabaseSQLite.lastQueryError" Nothing
 
 getDBHandle :: KeyPred _ -> IO Handle
 getDBHandle keyPred = 
@@ -546,7 +546,7 @@ readDBHandle db = readGlobalT openDBHandles >>= maybe err return . lookup db
   err = dbError ExecutionError $ "readDBHandle: no handle for '" ++ db ++ "'"
 
 openDBHandles :: GlobalT [(DBFile,Handle)]
-openDBHandles = globalTemporary []
+openDBHandles = globalT "Database.KeyDatabaseSQLite.openDBHandles" []
 
 withAllDBHandles :: (Handle -> IO _) -> IO ()
 withAllDBHandles f =
@@ -587,7 +587,7 @@ ensureDBTable db table cols =
           writeGlobalT knownDBTables $ (db,table) : dbTables
 
 knownDBTables :: GlobalT [(DBFile,TableName)]
-knownDBTables = globalTemporary []
+knownDBTables = globalT "Database.KeyDatabaseSQLite.knownDBTables" []
 
 beginTransaction :: IO ()
 beginTransaction =
@@ -605,7 +605,8 @@ rollbackTransaction =
      writeGlobalT currentlyInTransaction False
 
 currentlyInTransaction :: GlobalT Bool
-currentlyInTransaction = globalTemporary False
+currentlyInTransaction =
+  globalT "Database.KeyDatabaseSQLite.currentlyInTransaction" False
 
 -- converting arguments of a tuple to strings
 
