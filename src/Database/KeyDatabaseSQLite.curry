@@ -40,7 +40,7 @@ module Database.KeyDatabaseSQLite (
   ) where
 
 import Control.Monad  ( when )
-import Data.List      ( intersperse, insertBy )
+import Data.List      ( init, intersperse, insertBy )
 import Data.Maybe
 import System.IO      ( Handle, hPutStrLn, hGetLine, hFlush, hClose, stderr )
 
@@ -612,12 +612,9 @@ currentlyInTransaction =
 
 showTupleArgs :: Show a => a -> [String]
 showTupleArgs = splitTLC . removeOuterParens . show
-
-removeOuterParens :: String -> String
-removeOuterParens ('(':cs) = init cs
-
-init :: [a] -> [a]
-init = reverse . tail . reverse
+ where
+  removeOuterParens s = case s of ('(':cs) -> init cs
+                                  _        -> s
 
 -- split at top-level commas
 splitTLC :: String -> [String]
